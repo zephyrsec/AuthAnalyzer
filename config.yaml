@@ -1,0 +1,5 @@
+model_path: "./Models/isolation_forest_model.pkl"
+encoder_path: "./Models/encoder.pkl"
+log_path: "./event_analyzer.log"
+chunk_size: 10000
+anomalous_events_output_path: "./anomalous_events.txt"
