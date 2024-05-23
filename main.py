@@ -21,6 +21,33 @@ def main():
     parser = argparse.ArgumentParser(description='Authentication Event Analyzer')
     parser.add_argument('--trainmodel', type=str, help='Path to the TSV file for training the model')
     parser.add_argument('--analyze', type=str, help='Path to the TSV file for analyzing events')
+    parser.add_argument(
+    '--help', 
+    action='help', 
+    help="""This model is designed to analyze authentication events. 
+    Use --trainmodel with a TSV file path to train the model. 
+    Use --analyze with a TSV file path to analyze events.
+    Any missing values will be filled with default values or statistical imputation.
+    The expected columns are:
+    - time
+    - source_user@domain
+    - destination_user@domain
+    - source_computer
+    - destination_computer
+    - authentication_type
+    - logon_type
+    - authentication_orientation
+    - success
+    - domain
+    - domain_controller
+    - event_id
+    - process_name
+    - logon_id
+    - ip_address
+    - sub_status
+    - failure_reason
+    """
+    )
     args = parser.parse_args()
 
     models_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'Models')
