@@ -9,6 +9,7 @@ class FeatureManager:
         self.user_attempt_count = defaultdict(int)
         self.computer_success_count = defaultdict(int)
         self.computer_attempt_count = defaultdict(int)
+        self.user_last_login_hour = defaultdict(list)
 
     def update_global_state(self, df: pd.DataFrame):
         for user in df['source_user@domain']:
@@ -19,8 +20,10 @@ class FeatureManager:
             user = row['source_user@domain']
             computer = row['source_computer']
             success = row['success']
+            time = row['time']
             self.user_attempt_count[user] += 1
             self.computer_attempt_count[computer] += 1
+            self.user_last_login_hour[user].append(time.hour)
             if success:
                 self.user_success_count[user] += 1
                 self.computer_success_count[computer] += 1
@@ -45,7 +48,41 @@ class FeatureManager:
         df['failure_reason'].fillna('unknown', inplace=True)
 
         return df
+    
+    def detect_account_escalation(self, df: pd.DataFrame) -> pd.DataFrame:
+        df['escalated_account'] = df.groupby('source_user@domain')['destination_user@domain'].transform(
+            lambda x: x.ne(x.shift()).astype(int)
+        )
+        return df
 
+    def detect_password_spraying(self, df: pd.DataFrame, time_window: int = 60, threshold: int = 5) -> pd.DataFrame:
+        df = df.sort_values(by=['time'])
+        df['failed_attempts'] = (df['success'] == 0).astype(int)
+        df['failed_attempts_window'] = df['failed_attempts'].rolling(f'{time_window}S', on='time').sum()
+        df['password_spraying'] = df['failed_attempts_window'] > threshold
+        return df
+
+    def detect_brute_force_followed_by_success(self, df: pd.DataFrame, time_window: int = 60) -> pd.DataFrame:
+        df = df.sort_values(by=['time'])
+        df['failed_attempts'] = (df['success'] == 0).astype(int)
+        df['success_attempt'] = (df['success'] == 1).astype(int)
+        
+        df['failed_before_success'] = df['failed_attempts'].rolling(f'{time_window}S', on='time').sum()
+        df['successful_after_failed'] = df['failed_before_success'].shift(-1) > 0
+        df['brute_force_success'] = df['success_attempt'] & df['successful_after_failed']
+        
+        return df
+
+    def detect_unusual_login_times(self, df: pd.DataFrame) -> pd.DataFrame:
+        def calculate_unusual_time(user, hour):
+            last_hours = self.user_last_login_hour[user]
+            if not last_hours:
+                return 0
+            return int(hour not in last_hours)
+        
+        df['unusual_login_time'] = df.apply(lambda row: calculate_unusual_time(row['source_user@domain'], row['hour']), axis=1)
+        return df
+    
     def feature_engineering(self, df: pd.DataFrame) -> pd.DataFrame:
         df = self.handle_nulls(df)
         df['time'] = pd.to_datetime(df['time'])
@@ -62,5 +99,10 @@ class FeatureManager:
         df['computer_success_rate'] = df['source_computer'].map(
             lambda computer: self.computer_success_count[computer] / self.computer_attempt_count[computer] if self.computer_attempt_count[computer] > 0 else 0
         )
+
+        df = self.detect_account_escalation(df)
+        df = self.detect_password_spraying(df)
+        df = self.detect_brute_force_followed_by_success(df)
+        df = self.detect_unusual_login_times(df)
 
         return df
